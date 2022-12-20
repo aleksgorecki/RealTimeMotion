@@ -13,6 +13,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import com.example.realtimemotion.ml.BasicModel;
@@ -31,7 +33,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private MotionBuffer motionBuffer = new MotionBuffer(1);
     private SensorManager sensorManager;
     private Sensor accelerometer;
-    private float probabilityThreshold = 0.85f;
+    private EditText editTextDuration;
+    private EditText editTextProbability;
+    private Button updateButton;
+    private float probabilityThreshold = 0.70f;
     ArrayList<String> labels = new ArrayList<>(Arrays.asList(
             "nothing",
             "x_negative",
@@ -50,13 +55,50 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         setContentView(R.layout.activity_main);
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
+        editTextDuration = findViewById(R.id.editTextDuration);
+        editTextProbability = findViewById(R.id.editTextThreshold);
+        editTextDuration.setText(Long.toString(recordingPeriodMs));
+        editTextProbability.setText(Float.toString(probabilityThreshold));
+        updateButton = findViewById(R.id.button);
+
         try {
             model = BasicModel.newInstance(this);
         }
         catch (Exception e) {
             Toast.makeText(this, "Model creation error", Toast.LENGTH_SHORT).show();
         }
-        carouselTimer.scheduleAtFixedRate(new TimerTask() {
+
+        updateButton.setOnClickListener(view -> {
+            motionBuffer.clear();
+            recordingPeriodMs = Long.parseLong(editTextDuration.getText().toString());
+            probabilityThreshold = Float.parseFloat(editTextProbability.getText().toString());
+            carouselTimer = new Timer();
+            TimerTask timerTask = new TimerTask() {
+                @Override
+                public void run() {
+                    runOnUiThread(() -> {
+                        predict();
+                        motionBuffer.clear();
+                    });
+                }
+            };
+            carouselTimer.scheduleAtFixedRate(timerTask, 0, (long) recordingPeriodMs);
+        });
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        sensorManager.unregisterListener(this);
+        carouselTimer.cancel();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
+        carouselTimer = new Timer();
+        TimerTask timerTask = new TimerTask() {
             @Override
             public void run() {
                 runOnUiThread(() -> {
@@ -64,19 +106,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     motionBuffer.clear();
                 });
             }
-        }, 0, (long) recordingPeriodMs);
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        sensorManager.unregisterListener(this);
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
+        };
+        carouselTimer.scheduleAtFixedRate(timerTask, 0, (long) recordingPeriodMs);
     }
 
     @Override
