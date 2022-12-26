@@ -5,18 +5,18 @@ import androidx.appcompat.app.AppCompatActivity;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
+import android.graphics.Color;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.util.Log;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import com.example.realtimemotion.databinding.ActivityMainBinding;
 import com.example.realtimemotion.ml.BasicModel;
 
 import org.tensorflow.lite.DataType;
@@ -24,19 +24,27 @@ import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Timer;
-import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
     private BasicModel model;
-    private long recordingPeriodMs = 700;
-    private MotionBuffer motionBuffer = new MotionBuffer(1);
+    private MotionBuffer motionBuffer = new MotionBuffer(400);
     private SensorManager sensorManager;
     private Sensor accelerometer;
-    private EditText editTextDuration;
-    private EditText editTextProbability;
-    private Button updateButton;
-    private float probabilityThreshold = 0.70f;
+    private float PROBABILITY_THRESHOLD = 0.90f;
+    private ActivityMainBinding binding;
+
+    private long consecutiveStaticSamples = 0;
+    private boolean isStatic = false;
+    private long IS_STATIC_THRESHOLD = 100;
+    private long STATIC_SAMPLE_THRESHOLD = 5;
+    private long MAX_SAMPLES_THRESHOLD = 200;
+    private long detectedSamples = 0;
+    private boolean isDetecting = false;
+
+    private int COLOR_STATIC = Color.YELLOW;
+    private int COLOR_CHAOTIC = Color.GREEN;
+    private int COLOR_DETECTING = Color.RED;
+
     ArrayList<String> labels = new ArrayList<>(Arrays.asList(
             "nothing",
             "x_negative",
@@ -46,20 +54,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             "z_negative",
             "z_positive"
     ));
-    private Timer carouselTimer = new Timer();
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+
+        binding = ActivityMainBinding.inflate(getLayoutInflater());
+        View root = binding.getRoot();
+        setContentView(root);
+
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
-        editTextDuration = findViewById(R.id.editTextDuration);
-        editTextProbability = findViewById(R.id.editTextThreshold);
-        editTextDuration.setText(Long.toString(recordingPeriodMs));
-        editTextProbability.setText(Float.toString(probabilityThreshold));
-        updateButton = findViewById(R.id.button);
 
         try {
             model = BasicModel.newInstance(this);
@@ -67,47 +72,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         catch (Exception e) {
             Toast.makeText(this, "Model creation error", Toast.LENGTH_SHORT).show();
         }
-
-        updateButton.setOnClickListener(view -> {
-            motionBuffer.clear();
-            recordingPeriodMs = Long.parseLong(editTextDuration.getText().toString());
-            probabilityThreshold = Float.parseFloat(editTextProbability.getText().toString());
-            carouselTimer = new Timer();
-            TimerTask timerTask = new TimerTask() {
-                @Override
-                public void run() {
-                    runOnUiThread(() -> {
-                        predict();
-                        motionBuffer.clear();
-                    });
-                }
-            };
-            carouselTimer.scheduleAtFixedRate(timerTask, 0, (long) recordingPeriodMs);
-        });
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         sensorManager.unregisterListener(this);
-        carouselTimer.cancel();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
-        carouselTimer = new Timer();
-        TimerTask timerTask = new TimerTask() {
-            @Override
-            public void run() {
-                runOnUiThread(() -> {
-                    predict();
-                    motionBuffer.clear();
-                });
-            }
-        };
-        carouselTimer.scheduleAtFixedRate(timerTask, 0, (long) recordingPeriodMs);
     }
 
     @Override
@@ -117,7 +93,43 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         float y = sensorEvent.values[1];
         float z = sensorEvent.values[2];
 
-        motionBuffer.recordSample(new float[]{x, y, z});
+        motionBuffer.addToMemory(new float[]{x, y, z});
+
+        if (x <= STATIC_SAMPLE_THRESHOLD && y <= STATIC_SAMPLE_THRESHOLD && z <= STATIC_SAMPLE_THRESHOLD) {
+            consecutiveStaticSamples++;
+        }
+        else if (isStatic) {
+            binding.mainLayout.setBackgroundColor(COLOR_DETECTING);
+            consecutiveStaticSamples = 0;
+            isDetecting = true;
+            isStatic = false;
+        }
+        else if (!isDetecting){
+                binding.mainLayout.setBackgroundColor(COLOR_CHAOTIC);
+                consecutiveStaticSamples = 0;
+        }
+
+        if (consecutiveStaticSamples >= IS_STATIC_THRESHOLD) {
+            binding.mainLayout.setBackgroundColor(COLOR_STATIC);
+            isStatic = true;
+            if (isDetecting) {
+                detectedSamples = 0;
+                isDetecting = false;
+                predict();
+                motionBuffer.clear();
+            }
+        }
+
+        if (isDetecting) {
+            detectedSamples++;
+        }
+
+        if (detectedSamples > MAX_SAMPLES_THRESHOLD) {
+            // ignore what was recorded
+            detectedSamples = 0;
+            isDetecting = false;
+            motionBuffer.clear();
+        }
     }
 
     @Override
@@ -158,7 +170,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             return;
         }
 
-        if (highestProbability < probabilityThreshold) {
+        if (highestProbability < PROBABILITY_THRESHOLD) {
             return;
         }
 
