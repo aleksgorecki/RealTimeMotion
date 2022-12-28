@@ -39,6 +39,10 @@ public class MotionBuffer {
         return new Motion(combined.toArray(new float[combined.size()][3]), combined.size());
     }
 
+    public Motion getMotionFromMemory() {
+        return new Motion(memory.toArray(new float[memory.size()][3]), memory.size());
+    }
+
     public boolean isEmpty() {
         return (memory.isEmpty() && recording.isEmpty());
     }

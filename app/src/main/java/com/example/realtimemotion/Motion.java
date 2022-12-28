@@ -98,4 +98,14 @@ public class Motion {
         return recordedSamples;
     }
 
+    public float[] getFlattenedSamples() {
+        float[] flattened = new float[numSamples * 3];
+        int globalIndex = 0;
+        for (int i = 0; i < numSamples; i++) {
+            flattened[globalIndex++] = recordedSamples[i][0];
+            flattened[globalIndex++] = recordedSamples[i][1];
+            flattened[globalIndex++] = recordedSamples[i][2];
+        }
+        return flattened;
+    }
 }
