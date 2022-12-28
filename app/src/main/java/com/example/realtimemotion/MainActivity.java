@@ -29,6 +29,7 @@ import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 
 public class MainActivity extends AppCompatActivity {
     private BasicModel model;
@@ -39,9 +40,11 @@ public class MainActivity extends AppCompatActivity {
 
     private MotionDetector motionDetector;
 
-    private int COLOR_READY = Color.YELLOW;
-    private int COLOR_NOT_READY = Color.RED;
-    private int COLOR_TRIGGERED = Color.GREEN;
+    private final HashMap<MotionDetector.DetectorState, Integer> stateColorMapping = new HashMap<MotionDetector.DetectorState, Integer>(){{
+     put(MotionDetector.DetectorState.READY, Color.YELLOW);
+     put(MotionDetector.DetectorState.NOT_READY, Color.RED);
+     put(MotionDetector.DetectorState.TRIGGERED, Color.GREEN);
+    }};
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,34 +57,18 @@ public class MainActivity extends AppCompatActivity {
         motionDetector = new MotionDetector(this);
     }
 
-//    @Override
-//    protected void onStop() {
-//        super.onStop();
-//        EventBus.getDefault().unregister(this);
-//        motionDetector.unregister();
-//    }
-//
-//    @Override
-//    protected void onStart() {
-//        super.onStart();
-//        EventBus.getDefault().register(this);
-//        motionDetector.register();
-//    }
-
     @Override
     protected void onPause() {
         super.onPause();
         EventBus.getDefault().unregister(this);
         motionDetector.unregister();
-        Log.e("ACTIVITY", "onPause");
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         EventBus.getDefault().register(this);
-        motionDetector.register();
-        Log.e("ACTIVITY", "onResume");
+        motionDetector.registerSensorListener();
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -92,18 +79,6 @@ public class MainActivity extends AppCompatActivity {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onMotionDetectorStateEvent(MotionDetector.MotionDetectorStateEvent event) {
-        int color = COLOR_NOT_READY;
-        switch (event.newState) {
-            case READY:
-                color = COLOR_READY;
-                break;
-            case TRIGGERED:
-                color = COLOR_TRIGGERED;
-                break;
-            case NOT_READY:
-                color = COLOR_NOT_READY;
-                break;
-        }
-        binding.mainLayout.setBackgroundColor(color);
+        binding.mainLayout.setBackgroundColor(stateColorMapping.get(event.newState));
     }
 }

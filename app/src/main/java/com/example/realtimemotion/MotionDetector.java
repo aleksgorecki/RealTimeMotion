@@ -49,21 +49,19 @@ public class MotionDetector implements SensorEventListener {
     private BasicModel model;
     private MotionBuffer motionBuffer = new MotionBuffer(400);
     private SensorManager sensorManager;
-    private Sensor accelerometer;
 
-    private float PROBABILITY_THRESHOLD = 0.80f;
+    private float PROBABILITY_THRESHOLD = 0.70f;
     private long activeSamples = 0;
     private long consecutiveStaticSamples = 0;
     private long IS_STATIC_THRESHOLD = 50;
     private long STATIC_SAMPLE_THRESHOLD = 5;
-    private long MAX_SAMPLES_THRESHOLD = 100;
+    private long MAX_SAMPLES_THRESHOLD = 150;
 
     public DetectorState currentState = DetectorState.NOT_READY;
 
-    public MotionDetector(AppCompatActivity context) {
+    public MotionDetector(Context context) {
         this.context = context;
         sensorManager = (SensorManager) this.context.getSystemService(Context.SENSOR_SERVICE);
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
 
         try {
             model = BasicModel.newInstance(this.context);
@@ -91,8 +89,6 @@ public class MotionDetector implements SensorEventListener {
             consecutiveStaticSamples = 0;
         }
 
-        Log.e("STATIC", Long.toString(consecutiveStaticSamples));
-
         switch (currentState) {
             case READY:
                 if (aboveThreshold) {
@@ -102,14 +98,14 @@ public class MotionDetector implements SensorEventListener {
                 break;
             case TRIGGERED:
                 activeSamples++;
-                if (areSamplesStaticLongEnough(consecutiveStaticSamples)) {
+                if (areSamplesStaticLongEnough()) {
                     predict();
                     activeSamples = 0;
                     motionBuffer.clear();
                     changeState(DetectorState.READY);
                     EventBus.getDefault().post(new MotionDetectorStateEvent(currentState));
                 }
-                else if (isDetectorActiveLongEnough(consecutiveStaticSamples)) {
+                else if (isDetectorActiveLongEnough()) {
                     activeSamples = 0;
                     motionBuffer.clear();
                     changeState(DetectorState.NOT_READY);
@@ -117,7 +113,7 @@ public class MotionDetector implements SensorEventListener {
                 }
                 break;
             case NOT_READY:
-                if (areSamplesStaticLongEnough(consecutiveStaticSamples)) {
+                if (areSamplesStaticLongEnough()) {
                     motionBuffer.clear();
                     changeState(DetectorState.READY);
                     EventBus.getDefault().post(new MotionDetectorStateEvent(currentState));
@@ -131,15 +127,16 @@ public class MotionDetector implements SensorEventListener {
         return (Math.abs(x) <= STATIC_SAMPLE_THRESHOLD && Math.abs(y) <= STATIC_SAMPLE_THRESHOLD && Math.abs(z) <= STATIC_SAMPLE_THRESHOLD);
     }
 
-    private boolean areSamplesStaticLongEnough(long staticSamples) {
-        return (staticSamples >= IS_STATIC_THRESHOLD);
+    private boolean areSamplesStaticLongEnough() {
+        return (consecutiveStaticSamples >= IS_STATIC_THRESHOLD);
     }
 
-    private boolean isDetectorActiveLongEnough(long activeSamples) {
+    private boolean isDetectorActiveLongEnough() {
         return (activeSamples >= MAX_SAMPLES_THRESHOLD);
     }
 
     private void changeState(DetectorState newState) {
+        consecutiveStaticSamples = 0;
         currentState = newState;
     }
 
@@ -177,10 +174,8 @@ public class MotionDetector implements SensorEventListener {
         EventBus.getDefault().post(new MotionDetectedEvent(classes.get(mostLikelyIndex)));
     }
 
-    public void register() {
-        sensorManager = (SensorManager) this.context.getSystemService(Context.SENSOR_SERVICE);
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
+    public void registerSensorListener() {
+        sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION), SensorManager.SENSOR_DELAY_FASTEST);
         currentState = DetectorState.NOT_READY;
     }
 
